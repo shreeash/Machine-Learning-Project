@@ -1,0 +1,113 @@
+---
+title: "Machine Learning Project"
+author: "Satya"
+date: "February 27, 2017"
+output: html_document
+---
+##Background
+Using devices such as Jawbone Up, Nike FuelBand, and Fitbit it is now possible to collect a large amount of data about personal activity relatively inexpensively. These type of devices are part of the quantified self movement - a group of enthusiasts who take measurements about themselves regularly to improve their health, to find patterns in their behavior, or because they are tech geeks. One thing that people regularly do is quantify how much of a particular activity they do, but they rarely quantify how well they do it. In this project, your goal will be to use data from accelerometers on the belt, forearm, arm, and dumbell of 6 participants. They were asked to perform barbell lifts correctly and incorrectly in 5 different ways. More information is available from the [website here](http://groupware.les.inf.puc-rio.br/har) (see the section on the Weight Lifting Exercise Dataset).
+
+##Summary
+The goal of this project is to predict the manner (out of 5 levels: A B C D E) in which the 6 participants in the study did the exercise in the test set. This is the "classe" variable in the training set.  
+
+##Loading Data
+```{r, echo=T}
+fileUrl <- "https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv"
+download.file(fileUrl, destfile = "train.csv")
+train <- read.csv("train.csv", header = T, na.strings = "NA")
+
+fileUrl <- "https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv"
+download.file(fileUrl, destfile = "test.csv")
+test <- read.csv("test.csv", header = T, na.strings = "NA")
+```
+
+##Partitioning Training Data
+```{r, echo=T}
+library(caret)
+set.seed(1)
+#partition the train data into %80 Train and %20 Test
+inTrain <- createDataPartition(train$classe,p=0.8, list=FALSE)
+Train <- train[inTrain,]
+Test <- train[-inTrain,]
+
+dim(Train)
+dim(Test)
+```
+There are 160 variables. Not all the variables will be useful to generate the predictive models. Hence will be apply certain criteria to chuck the variables that will have little to no value in our analysis.
+
+##Cleaning Data
+In this step let's identify and remove unnecessary variables that have too many NA values.
+```{r, echo=T}
+Train <- Train[ , !apply(Train, 2 , function(x) any(is.na(x)))]
+Test <- Test[ , !apply(Test, 2 , function(x) any(is.na(x)))]
+
+dim(Train)
+dim(Test)
+```
+Now the number of variables is down to 93. The first 7 variables are catagorical variables that are not useful in building predictive models that is based on numerical analysis. So let's discard them as well.  
+```{r, echo=T}
+Train <- Train[, -(1:7)]
+Test  <- Test[, -(1:7)]
+
+dim(Train)
+dim(Test)
+```
+Finally, we will remove variables that have very little to zero variance in their observations as they will not have good correlation with other variables.
+```{r, echo=T}
+z <- nearZeroVar(Train)
+Train <- Train[,-z]
+Test <- Test[,-z]
+
+dim(Train)
+dim(Test)
+```
+The cleaned data set is now more managable with 53 variables that includes 'classe'. 
+
+##Correlation
+We can visualize the correlations among all the variables in the following plot with corrplot function that comes with corrplot package. Calling all 52 variables that are being analyzed:
+```{r, fig.width=7.5, fig.height=7.5, fig.align="center", echo=T}
+library(corrplot)
+corrplot(cor(Train[,-53]), order = "FPC", method = "color")
+```
+
+
+We observe that there are quite a few strong correlations as indicated by dark colored squares (not including the diagonal)
+
+##Predictive Models
+###Random Forest Method
+Random Forest method will be used below to build the predictive model with K set to 5-folds.
+```{r, echo=T}
+library(randomForest)
+set.seed(2)
+set <- trainControl(method="cv", number=5, verboseIter=FALSE)
+cvfit <- train(classe ~ ., data=Train, method="rf", trControl=set)
+cvfit
+```
+The accuracy values are high in this model. So we will proceed further and predict classe variable for the partitioned Test data and check for accuracy.
+```{r, echo=T}
+modeltest <- predict(cvfit, Test)
+confusionMatrix(Test$classe, modeltest)
+```
+From this model we can see that the predition of classe worked with an accuracy of %99.44 and a small error rate of %0.56.
+
+###Decision Tree Method
+We can also use Decision Tree method to generate a prediction model and check if it could be a equally good or better model. Let's run the Train data in this model.
+```{r, echo=T}
+library(rpart.plot)
+library(rattle)
+set.seed(2)
+dtree <- rpart(classe ~ ., data=Train, method="class")
+fancyRpartPlot(dtree)
+```
+
+
+Now using the decision tree variable dtree let's predict the partitioned Test data.
+```{r, echo=T}
+preddtree <- predict(dtree, Test, type = "class")
+confusionMatrix(Test$classe, preddtree)
+```
+Note that the accuracy is about %73.8 which means there is an error rate of %26.2. Clearly this is very high error rate than the model generate by random forest method. At this point it becomes obvious that random forest did a superior job at building a predictive model due to it's near %100 accuracy. Hence to conclude we will predict the classe variable for the original test set of 20 observations with our random forest predictive model:
+```{r, echo=T}
+modeltest2 <- predict(cvfit, test)
+modeltest2
+```
